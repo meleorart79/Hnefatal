@@ -1,0 +1,22 @@
+# Visual Studio
+.vs/
+*.suo
+*.user
+
+# Build outputs
+build/
+Debug/
+Release/
+x64/
+*.exe
+*.o
+*.obj
+*.pdb
+*.ilk
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+.DS_Store

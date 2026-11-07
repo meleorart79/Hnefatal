@@ -1,0 +1,583 @@
+
+============================================================
+FILE: ./src\game.c
+============================================================
+
+#include "game.h"
+#include <stdio.h>
+
+const char* game_title(void) { return "HNEFATAL"; }
+
+const char* game_version(void) { return "0.1.0"; }
+
+/* AI-assisted: FEN-like starting position. Digits represent consecutive empty cells. */
+static const char* START_POSITION = "3aaaaa3/5a5/11/a4d4a/a3ddd3a/aa1ddkdd1aa/a3ddd3a/a4d4a/11/5a5/3aaaaa3";
+
+Board board_make(void)
+{
+    Board board = { 0 };
+    int i = 0;
+
+    for (Row row = 0; row < ROW_COUNT; row++) {
+        for (Column column = 0; column < COLUMN_COUNT; column++) {
+            board.cells[i].row = row;
+            board.cells[i].column = column;
+
+            if (row == ROW_1 || row == ROW_11 || column == COLUMN_A || column == COLUMN_K) {
+                board.cells[i].type = Edge;
+            }
+            else if (row == ROW_6 && column == COLUMN_F) {
+                board.cells[i].type = Castle;
+            }
+            else {
+                board.cells[i].type = Open;
+            }
+
+            board.cells[i].occupied = false;
+            i++;
+        }
+    }
+
+    return board;
+}
+
+static Cell* board_cell(Board* board, char column, int row)
+{
+    int c = column - 'A';
+    int r = row - 1;
+
+    return &board->cells[r * COLUMN_COUNT + c];
+}
+
+/* AI-assisted: Converts a FEN-like position string into a board. */
+bool board_position_from_string(Board* board, const char* position)
+{
+    if (board == NULL || position == NULL)
+        return false;
+
+    Board parsed = board_make();
+    int row = 0;
+    int column = 0;
+    int piece_id = 0;
+    int king_count = 0;
+
+    for (int i = 0; position[i] != '\0'; i++) {
+        char symbol = position[i];
+
+        if (symbol >= '0' && symbol <= '9') {
+            int empty_count = 0;
+
+            while (position[i] >= '0' && position[i] <= '9') {
+                empty_count = empty_count * 10 + position[i] - '0';
+                i++;
+            }
+            i--;
+
+            if (empty_count == 0 || column + empty_count > COLUMN_COUNT)
+                return false;
+
+            column += empty_count;
+            continue;
+        }
+
+        if (symbol == '/') {
+            if (column != COLUMN_COUNT || row >= ROW_COUNT - 1)
+                return false;
+
+            row++;
+            column = 0;
+            continue;
+        }
+
+        if (column >= COLUMN_COUNT || row >= ROW_COUNT)
+            return false;
+
+        Cell* cell = &parsed.cells[
+            (ROW_COUNT - 1 - row) * COLUMN_COUNT + column
+        ];
+
+        switch (symbol) {
+        case 'a':
+            cell->piece = (Piece){ PARTY_A, RANK_P, piece_id++ };
+            cell->occupied = true;
+            break;
+
+        case 'd':
+            cell->piece = (Piece){ PARTY_D, RANK_P, piece_id++ };
+            cell->occupied = true;
+            break;
+
+        case 'k':
+            cell->piece = (Piece){ PARTY_D, RANK_K, piece_id++ };
+            cell->occupied = true;
+            king_count++;
+            break;
+
+        default:
+            return false;
+        }
+
+        column++;
+    }
+
+    if (row != ROW_COUNT - 1 ||
+        column != COLUMN_COUNT ||
+        king_count != 1 ||
+        piece_id > INIT_PIECE_COUNT)
+        return false;
+
+    *board = parsed;
+    return true;
+}
+
+/* AI-assisted: Converts a board into a compressed FEN-like position string. */
+bool board_position_to_string(const Board* board, char position[POSITION_STRING_SIZE])
+{
+    if (board == NULL || position == NULL)
+        return false;
+
+    int index = 0;
+    int king_count = 0;
+
+    for (int row = ROW_COUNT - 1; row >= 0; row--) {
+        int empty_count = 0;
+
+        for (int column = 0; column < COLUMN_COUNT; column++) {
+            const Cell* cell = &board->cells[
+                row * COLUMN_COUNT + column
+            ];
+
+            if (!cell->occupied) {
+                empty_count++;
+                continue;
+            }
+
+            if (empty_count > 0) {
+                int written = snprintf(
+                    position + index,
+                    POSITION_STRING_SIZE - index,
+                    "%d",
+                    empty_count
+                );
+
+                if (written < 0 || written >= POSITION_STRING_SIZE - index)
+                    return false;
+
+                index += written;
+                empty_count = 0;
+            }
+
+            Piece piece = cell->piece;
+
+            if (piece.party == PARTY_A && piece.rank == RANK_P) {
+                position[index++] = 'a';
+            }
+            else if (piece.party == PARTY_D && piece.rank == RANK_P) {
+                position[index++] = 'd';
+            }
+            else if (piece.party == PARTY_D && piece.rank == RANK_K) {
+                position[index++] = 'k';
+                king_count++;
+            }
+            else {
+                return false;
+            }
+        }
+
+        if (empty_count > 0) {
+            int written = snprintf(
+                position + index,
+                POSITION_STRING_SIZE - index,
+                "%d",
+                empty_count
+            );
+
+            if (written < 0 || written >= POSITION_STRING_SIZE - index)
+                return false;
+
+            index += written;
+        }
+
+        if (row > 0)
+            position[index++] = '/';
+    }
+
+    position[index] = '\0';
+    return king_count == 1;
+}
+
+// AI-assisted: Sets up the initial board using the position string.
+void board_setup(Board* board)
+{
+    board_position_from_string(board, START_POSITION);
+}
+
+void game_init(GameState* game)
+{
+    game->board = board_make();
+    board_setup(&game->board);
+}
+
+============================================================
+FILE: ./src\game.h
+============================================================
+
+#ifndef GAME_H
+#define GAME_H
+
+#include <stdbool.h>
+#include "pieces.h"
+
+#define BOARD_SIZE (ROW_COUNT * COLUMN_COUNT)
+#define POSITION_STRING_SIZE 132
+
+typedef enum {
+    COLUMN_A, COLUMN_B, COLUMN_C, COLUMN_D, COLUMN_E, COLUMN_F,
+    COLUMN_G, COLUMN_H, COLUMN_I, COLUMN_J, COLUMN_K, COLUMN_COUNT
+} Column;
+
+typedef enum {
+    ROW_1, ROW_2, ROW_3, ROW_4, ROW_5, ROW_6,
+    ROW_7, ROW_8, ROW_9, ROW_10, ROW_11, ROW_COUNT
+} Row;
+
+typedef struct {
+    char column;
+    int row;
+} Position;
+
+typedef enum {
+    Edge, Castle, Open
+} CType;
+
+typedef struct {
+    Column column;
+    Row row;
+    CType type;
+    Piece piece;
+    bool occupied;
+} Cell;
+
+typedef struct {
+    Cell cells[BOARD_SIZE];
+} Board;
+
+typedef struct {
+    Board board;
+} GameState;
+
+const char* game_title(void);
+const char* game_version(void);
+
+Board board_make(void);
+void board_setup(Board* board);
+bool board_position_from_string(Board* board, const char* position);
+bool board_position_to_string(const Board* board, char position[POSITION_STRING_SIZE]);
+
+void game_init(GameState* game);
+
+#endif
+
+============================================================
+FILE: ./src\main.c
+============================================================
+
+#include <stdlib.h>
+#include <time.h>
+#include "raylib.h"
+#include "game.h"
+#include "render.h"
+
+int main(void)
+{
+    srand((unsigned)time(NULL));
+    const char* title = TextFormat("%s v%s", game_title(), game_version());
+    InitWindow(SCREEN_W, SCREEN_H, title);
+    SetTargetFPS(60);
+
+    GameState game;
+    game_init(&game);
+    RenderState view = { 0 };
+
+    while (!WindowShouldClose())
+    {
+        float dt = GetFrameTime();
+
+        if (IsKeyPressed(KEY_SPACE)) game_init(&game);   /* redistribuer (debug) */
+        render_update(&view, dt);
+
+        BeginDrawing();
+        render_draw(&view, &game);
+        EndDrawing();
+    }
+
+    CloseWindow();
+    return 0;
+}
+
+============================================================
+FILE: ./src\pieces.c
+============================================================
+
+#include <stdio.h>
+#include <assert.h>
+#include <stdlib.h>
+#include "pieces.h"
+
+static const char* PARTY_NAMES[PARTY_COUNT] = {
+    [PARTY_D] = "Defender", [PARTY_A] = "Attacker"
+};
+
+static const char* RANK_NAMES[RANK_COUNT] = {
+    [RANK_P] = "Pawn", [RANK_K] = "King"
+};
+
+const char* party_name(Party party) { return PARTY_NAMES[party]; }
+const char* rank_name(Rank rank) { return RANK_NAMES[rank]; }
+
+void piece_print(Piece piece)
+{
+    printf("%s %s\n", rank_name(piece.rank), party_name(piece.party));
+}
+
+BoardP boardp_make(void)
+{
+    BoardP boardp;
+    boardp.count = 0;
+    boardp.a_count = 0;
+    boardp.d_count = 0;
+	for (Party party = 0; party < PARTY_COUNT; party++) {
+
+		if (party == PARTY_D) {
+			while (boardp.d_count < 12) {
+				boardp.pieces[boardp.count].party = party;
+				boardp.pieces[boardp.count].rank = RANK_P;
+				boardp.pieces[boardp.count].id = boardp.count;
+				boardp.count++;
+				boardp.d_count++;
+			}
+			boardp.pieces[boardp.count].party = party;
+			boardp.pieces[boardp.count].rank = RANK_K;
+			boardp.pieces[boardp.count].id = boardp.count;
+			boardp.count++;
+			boardp.d_count++;
+		}
+
+		if (party == PARTY_A) {
+			while (boardp.a_count < 24) {
+				boardp.pieces[boardp.count].party = party;
+				boardp.pieces[boardp.count].rank = RANK_P;
+				boardp.pieces[boardp.count].id = boardp.count;
+				boardp.count++;
+				boardp.a_count++;
+			}
+		}
+	}
+	
+    return boardp;
+} 
+
+============================================================
+FILE: ./src\pieces.h
+============================================================
+
+#ifndef PIECES_H
+#define PIECES_H
+
+typedef enum { 
+    PARTY_D, PARTY_A, 
+    PARTY_COUNT
+} Party;
+
+typedef enum {
+    RANK_P, RANK_K,
+    RANK_COUNT
+} Rank;
+
+#define INIT_PIECE_COUNT 37
+
+typedef struct {
+    Party party;
+    Rank rank;
+    int id;
+} Piece;
+
+typedef struct {
+    Piece pieces[INIT_PIECE_COUNT];
+	int a_count;
+	int d_count;
+    int  count;          
+} BoardP;
+
+const char* rank_name(Rank rank);
+const char* party_name(Party party);
+void piece_print(Piece piece);
+BoardP boardp_make(void);     
+
+#endif
+
+============================================================
+FILE: ./src\render.c
+============================================================
+
+#include <stdbool.h>
+#include "raylib.h"
+#include "render.h"
+
+static void draw_board(const Board* board)
+{
+
+}
+
+void render_update(RenderState* view, float dt)
+{
+    Vector2 mouse = GetMousePosition();
+    view->hovered = -1;
+
+    for (int i = 0; i < HAND_SIZE; i++) {
+        bool over = CheckCollisionPointRec(mouse, hand_piece_rect(i));
+        if (over) view->hovered = i;
+
+        float target = over ? 24.0f : 0.0f;
+        float k = 12.0f * dt;
+        if (k > 1.0f) k = 1.0f;
+        view->lift[i] += (target - view->lift[i]) * k;
+    }
+}
+
+void render_draw(const RenderState* view, const GameState* game)
+{
+    ClearBackground((Color) { 24, 28, 34, 255 });
+
+    draw_board
+
+    DrawText(TextFormat("boardp: %d", game->boardp.count), 10, 10, 20, RAYWHITE);
+    DrawFPS(10, 36);
+}
+
+============================================================
+FILE: ./src\render.h
+============================================================
+
+#ifndef RENDER_H
+#define RENDER_H
+
+#include "game.h"
+
+#define SCREEN_W 1280
+#define SCREEN_H 720
+
+typedef struct {
+    float lift[HAND_SIZE];   /* hauteur de survol de chaque carte (pixels) */
+    int   hovered;           /* index de la carte survolee, -1 si aucune */
+} RenderState;
+
+void render_update(RenderState* view, float dt);
+void render_draw(const RenderState* view, const GameState* game);
+
+#endif
+
+============================================================
+FILE: ./src\rules.c
+============================================================
+
+#include <stddef.h>
+#include "rules.h"
+
+bool is_move_valid(const Board* board, const Position* from, const Position* to)
+{
+	if (board == NULL || from == NULL || to == NULL)
+		return false;
+	// Check if the move is on the same row or column
+	if (from->row != to->row && from->column != to->column)
+		return false;
+	// Check if the path is clear
+	int row_step = (to->row - from->row) ? ((to->row - from->row) / abs(to->row - from->row)) : 0;
+	int col_step = (to->column - from->column) ? ((to->column - from->column) / abs(to->column - from->column)) : 0;
+	int current_row = from->row + row_step;
+	int current_col = from->column + col_step;
+	while (current_row != to->row || current_col != to->column) {
+		const Cell* cell = &board->cells[(current_row - 1) * COLUMN_COUNT + (current_col - 'A')];
+		if (cell->occupied)
+			return false;
+		current_row += row_step;
+		current_col += col_step;
+	}
+	return true;
+}
+
+bool is_capture_valid(const Board* board, const Position* pos)
+{
+	if (board == NULL || pos == NULL)
+		return false;
+	// Check adjacent cells for enemy pieces
+	int directions[4][2] = { {0, 1}, {1, 0}, {0, -1}, {-1, 0} };
+	for (int i = 0; i < 4; i++) {
+		int adj_row = pos->row + directions[i][0];
+		int adj_col = pos->column + directions[i][1];
+		if (adj_row >= 1 && adj_row <= ROW_COUNT && adj_col >= 'A' && adj_col <= 'K') {
+			const Cell* cell = &board->cells[(adj_row - 1) * COLUMN_COUNT + (adj_col - 'A')];
+			if (cell->occupied && cell->piece.party != board->cells[(pos->row - 1) * COLUMN_COUNT + (pos->column - 'A')].piece.party) {
+				// Check if the enemy piece is surrounded
+				int surround_count = 0;
+				for (int j = 0; j < 4; j++) {
+					int check_row = adj_row + directions[j][0];
+					int check_col = adj_col + directions[j][1];
+					if (check_row >= 1 && check_row <= ROW_COUNT && check_col >= 'A' && check_col <= 'K') {
+						const Cell* check_cell = &board->cells[(check_row - 1) * COLUMN_COUNT + (check_col - 'A')];
+						if (!check_cell->occupied || check_cell->piece.party == board->cells[(pos->row - 1) * COLUMN_COUNT + (pos->column - 'A')].piece.party) {
+							surround_count++;
+						}
+					}
+				}
+				if (surround_count >= 2)
+					return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool is_game_over(const Board* board)
+{
+	if (board == NULL)
+		return false;
+	// Check if the king is captured
+	for (int i = 0; i < BOARD_SIZE; i++) {
+		const Cell* cell = &board->cells[i];
+		if (cell->occupied && cell->piece.rank == RANK_K) {
+			return false; // King is still on the board
+		}
+	}
+	return true; // King is captured, game over
+}
+
+void apply_move(Board* board, const Position* from, const Position* to)
+{
+	if (board == NULL || from == NULL || to == NULL)
+		return;
+	Cell* from_cell = &board->cells[(from->row - 1) * COLUMN_COUNT + (from->column - 'A')];
+	Cell* to_cell = &board->cells[(to->row - 1) * COLUMN_COUNT + (to->column - 'A')];
+	if (from_cell->occupied && !to_cell->occupied) {
+		to_cell->piece = from_cell->piece;
+		to_cell->occupied = true;
+		from_cell->occupied = false;
+	}
+}
+
+============================================================
+FILE: ./src\rules.h
+============================================================
+
+#ifndef RULES_H
+#define RULES_H
+
+#include <stdbool.h>
+#include "pieces.h"
+
+bool is_move_valid(const Board* board, const Position* from, const Position* to);
+bool is_capture_valid(const Board* board, const Position* pos);
+bool is_game_over(const Board* board);
+void apply_move(Board* board, const Position* from, const Position* to);
+
+#endif
