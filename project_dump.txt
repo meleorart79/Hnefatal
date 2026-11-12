@@ -1,16 +1,304 @@
 
 ============================================================
-FILE: ./src\game.c
+FILE: .\.gitignore
 ============================================================
 
-#include "game.h"
+# Visual Studio
+.vs/
+*.suo
+*.user
+
+# Build outputs
+build/
+Debug/
+Release/
+x64/
+*.exe
+*.o
+*.obj
+*.pdb
+*.ilk
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+.DS_Store
+
+============================================================
+FILE: .\cleanup.txt
+============================================================
+
+Cleanup plan
+I'll address the problems in this order, one step at a time. I'll explain each change and its purpose, then have you test it before moving on.
+1. Capture rules — current priority
+The current implementation has three separate king exceptions that contradict your updated decision:
+- Sandwich: capture_sandwiches() explicitly refuses to capture the king.
+- Encirclement: groups containing the king are excluded through has_king.
+- Special king capture: capture_king() requires four attackers around the king, independently of the normal capture rules.
+There is also an obsolete KING_CAN_CAPTURE switch and comments describing the old rules. project_dump(3).txt
+
+
+We'll remove those exceptions and let the normal capture mechanisms handle the king.
+2. Tests
+Some tests currently enforce the old rules. We'll update them to verify that:
+- The king can be captured by a normal sandwich.
+- A group containing the king can be captured by encirclement.
+- Three or four attackers around the king have no special significance.
+- The capture count includes the king like any other piece.
+3. Board initialization and position parsing
+I'll address:
+- board_setup() ignoring whether position loading succeeded.
+- Position validation, including whether pieces can be loaded onto inappropriate squares.
+- Any inconsistencies between initialization and the board's actual state.
+4. Game loop and input
+I'll address:
+- The first-turn logic: turn_player starts as PARTY_A but is immediately switched to PARTY_D.
+- Input validation and recovery from malformed coordinates.
+- Making sure a move is only applied after successful validation.
+5. UI and documentation
+I'll address:
+- The empty castle currently printing both + and ..
+- Outdated comments and inconsistent formatting.
+- The README claiming that capture and victory mechanics are not implemented.
+- Version and project-structure information that no longer matches the code.
+That's the cleanup scope based on the current project dump. We won't add new features or rewrite the architecture.
+
+============================================================
+FILE: .\hnefatal.exe
+============================================================
+
+[ERROR: Could not read file (likely binary): 'utf-8' codec can't decode byte 0x90 in position 2: invalid start byte]
+
+
+============================================================
+FILE: .\Makefile
+============================================================
+
+CC      := gcc
+CFLAGS  := -Isrc -std=c11 -Wall -Wextra -Wpedantic
+
+SRC := $(wildcard src/*.c)
+OBJ := $(SRC:src/%.c=build/%.o)
+
+TEST_LIB := src/ui.c src/board.c src/rules.c
+
+hnefatal.exe: $(OBJ)
+	$(CC) $(OBJ) -o $@
+
+build/%.o: src/%.c | build
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
+
+build:
+	mkdir -p build
+
+run: hnefatal.exe
+	./hnefatal.exe
+
+build/test_board.exe: tests/test_board.c $(TEST_LIB) | build
+	$(CC) $(CFLAGS) $^ -o $@
+
+build/test_rules.exe: tests/test_rules.c $(TEST_LIB) | build
+	$(CC) $(CFLAGS) $^ -o $@
+
+build/test_capture.exe: tests/test_capture.c $(TEST_LIB) | build
+	$(CC) $(CFLAGS) $^ -o $@
+
+test: build/test_board.exe build/test_rules.exe build/test_capture.exe
+	./build/test_board.exe
+	./build/test_rules.exe
+	./build/test_capture.exe
+
+clean:
+	rm -rf build hnefatal.exe
+
+-include $(OBJ:.o=.d)
+
+.PHONY: run clean test
+
+============================================================
+FILE: .\README.md
+============================================================
+
+# Hnefatal
+
+**Version:** 0.3.0
+**Language:** C (C11)  
+**Type:** Console-based strategy board game
+
+## Overview
+
+Hnefatal is a turn-based strategy game inspired by the historical Nordic board game [Hnefatafl](https://en.wikipedia.org/wiki/Tafl_games).
+
+The game is played on an 11×11 board between two opposing parties:
+
+- **Attackers (A):** Attempt to capture the opposing king.
+- **Defenders (D):** Protect the king and help him escape.
+
+The project is developed in C, with an emphasis on modular architecture, structured data, rule validation and board-state management.
+
+This project is currently under development.
+
+## Game Structure
+
+### Board
+
+- 11 rows × 11 columns.
+- Columns are labelled A–K.
+- Rows are labelled 1–11.
+- Each cell has a position, a type and a piece.
+- Three cell types:
+  - `Open`: Regular playable cell.
+  - `Edge`: Board perimeter.
+  - `Castle`: Central starting position.
+
+### Pieces
+
+| Piece | Party | Symbol |
+|---|---|---|
+| Attacking pawn | Attackers | `a` |
+| Defending pawn | Defenders | `d` |
+| King | Defenders | `k` |
+
+Each piece also has a unique identifier.
+
+## Project Architecture
+
+The project is divided into separate modules to keep responsibilities isolated.
+
+```text
+Hnefatal/
+│
+├── src/
+│   ├── main.c       # Main game loop and entry point
+│   ├── board.c      # Board initialization and position serialization
+│   ├── board.h      # Board structures, enums and declarations
+│   ├── rules.c      # Movement, capture and victory conditions
+│   ├── rules.h      # Game rules interface
+│   ├── ui.c         # Console board rendering
+│   └── ui.h         # User interface declarations
+│
+├── tests/
+│   ├── test_board.c # Board-related tests
+│   └── test_rules.c # Game-rule tests
+│
+├── build/           # Generated object files and test executables
+├── Makefile         # Build and test automation
+├── .gitignore
+└── README.md
+```
+
+## Implemented Features
+
+- [x] 11×11 board representation.
+- [x] Cell types and piece structures.
+- [x] Initial board configuration.
+- [x] Unique piece identifiers.
+- [x] FEN-like board position representation.
+- [x] Position string parsing and serialization.
+- [x] Console board rendering.
+- [x] Basic movement validation.
+- [x] Orthogonal movement (horizontal and vertical).
+- [x] Path obstruction detection.
+- [x] Piece movement application.
+- [x] Piece capture mechanics.
+- [x] Complete victory-condition handling.
+- [ ] Fully functional game loop.
+
+## Movement Rules
+
+Pieces move horizontally or vertically, like rooks in chess.
+
+A valid move must satisfy the following conditions:
+
+1. The destination must be on the same row or column as the starting position.
+2. The destination must be empty.
+3. The path between the two positions must be clear.
+4. Pieces cannot traverse the central castle.
+5. Only the king can occupy the castle.
+6. Players can only move pieces belonging to their party.
+
+## Board Position Notation
+
+The board supports a compressed, FEN-like string representation.
+
+- `a`: Attacking pawn.
+- `d`: Defending pawn.
+- `k`: King.
+- Numbers: Consecutive empty cells.
+- `/`: Separates rows.
+
+Example:
+
+```text
+3aaaaa3/5a5/11/a4d4a/a3ddd3a/aa1ddkdd1aa/a3ddd3a/a4d4a/11/5a5/3aaaaa3
+```
+
+The notation allows board positions to be loaded from strings and converted back into strings for storage or testing.
+
+## Building
+
+### Requirements
+
+- GCC compiler.
+- GNU Make.
+- C11-compatible compiler.
+
+### Compile
+
+```bash
+make
+```
+
+### Run
+
+```bash
+make run
+```
+
+### Run Tests
+
+```bash
+make test
+```
+
+### Clean Build Files
+
+```bash
+make clean
+```
+
+## Development
+
+The project follows a modular approach:
+
+- `board.c`: Board state and initialization.
+- `rules.c`: Validation and game mechanics.
+- `ui.c`: Console output and rendering.
+- `main.c`: Game execution and player interaction.
+
+The intention is to keep game logic independent from the user interface, making individual mechanics easier to develop and test.
+
+## Project Status
+
+**Hnefatal is an ongoing personal programming project.**
+
+The current development focus is completing the fundamental game mechanics, particularly piece capture, victory conditions and reliable turn management.
+
+Future development will build upon the existing board and rules architecture.
+
+---
+
+*Developed by David Dakeu.*
+
+============================================================
+FILE: .\src\board.c
+============================================================
+
+#include "board.h"
 #include <stdio.h>
 
-const char* game_title(void) { return "HNEFATAL"; }
-
-const char* game_version(void) { return "0.1.0"; }
-
-/* AI-assisted: FEN-like starting position. Digits represent consecutive empty cells. */
 static const char* START_POSITION = "3aaaaa3/5a5/11/a4d4a/a3ddd3a/aa1ddkdd1aa/a3ddd3a/a4d4a/11/5a5/3aaaaa3";
 
 Board board_make(void)
@@ -33,7 +321,9 @@ Board board_make(void)
                 board.cells[i].type = Open;
             }
 
-            board.cells[i].occupied = false;
+            board.cells[i].piece.party = PARTY_NONE;
+            board.cells[i].piece.rank = RANK_NONE;
+            board.cells[i].piece.id = 0;
             i++;
         }
     }
@@ -41,15 +331,6 @@ Board board_make(void)
     return board;
 }
 
-static Cell* board_cell(Board* board, char column, int row)
-{
-    int c = column - 'A';
-    int r = row - 1;
-
-    return &board->cells[r * COLUMN_COUNT + c];
-}
-
-/* AI-assisted: Converts a FEN-like position string into a board. */
 bool board_position_from_string(Board* board, const char* position)
 {
     if (board == NULL || position == NULL)
@@ -58,7 +339,8 @@ bool board_position_from_string(Board* board, const char* position)
     Board parsed = board_make();
     int row = 0;
     int column = 0;
-    int piece_id = 0;
+    int a_piece_id = 1;
+    int d_piece_id = 1;
     int king_count = 0;
 
     for (int i = 0; position[i] != '\0'; i++) {
@@ -98,18 +380,24 @@ bool board_position_from_string(Board* board, const char* position)
 
         switch (symbol) {
         case 'a':
-            cell->piece = (Piece){ PARTY_A, RANK_P, piece_id++ };
-            cell->occupied = true;
+            if (cell->type == Castle)
+                return false;
+
+            cell->piece = (Piece){ PARTY_A, RANK_P, 100 + a_piece_id++ };
             break;
 
         case 'd':
-            cell->piece = (Piece){ PARTY_D, RANK_P, piece_id++ };
-            cell->occupied = true;
+            if (cell->type == Castle)
+                return false;
+
+            cell->piece = (Piece){ PARTY_D, RANK_P, 200 + d_piece_id++ };
             break;
 
         case 'k':
-            cell->piece = (Piece){ PARTY_D, RANK_K, piece_id++ };
-            cell->occupied = true;
+            if (king_count >= 1)
+                return false;
+
+            cell->piece = (Piece){ PARTY_D, RANK_K, 200 };
             king_count++;
             break;
 
@@ -120,10 +408,7 @@ bool board_position_from_string(Board* board, const char* position)
         column++;
     }
 
-    if (row != ROW_COUNT - 1 ||
-        column != COLUMN_COUNT ||
-        king_count != 1 ||
-        piece_id > INIT_PIECE_COUNT)
+    if (row != ROW_COUNT - 1 || column != COLUMN_COUNT)
         return false;
 
     *board = parsed;
@@ -147,7 +432,10 @@ bool board_position_to_string(const Board* board, char position[POSITION_STRING_
                 row * COLUMN_COUNT + column
             ];
 
-            if (!cell->occupied) {
+            if (cell->piece.party == PARTY_NONE) {
+                if (cell->piece.rank != RANK_NONE)
+                    return false;
+
                 empty_count++;
                 continue;
             }
@@ -168,6 +456,13 @@ bool board_position_to_string(const Board* board, char position[POSITION_STRING_
             }
 
             Piece piece = cell->piece;
+
+            if (cell->type == Castle &&
+                !(cell->piece.party == PARTY_D && cell->piece.rank == RANK_K))
+                return false;
+
+            if (index >= POSITION_STRING_SIZE - 1)
+                return false;
 
             if (piece.party == PARTY_A && piece.rank == RANK_P) {
                 position[index++] = 'a';
@@ -198,38 +493,50 @@ bool board_position_to_string(const Board* board, char position[POSITION_STRING_
             index += written;
         }
 
-        if (row > 0)
+        if (row > 0) {
+            if (index >= POSITION_STRING_SIZE - 1)
+                return false;
+
             position[index++] = '/';
+        }
     }
 
     position[index] = '\0';
-    return king_count == 1;
+    return king_count <= 1;
 }
 
-// AI-assisted: Sets up the initial board using the position string.
-void board_setup(Board* board)
+bool board_setup(Board* board)
 {
-    board_position_from_string(board, START_POSITION);
+    if (board == NULL)
+        return false;
+
+    return board_position_from_string(board, START_POSITION);
 }
 
-void game_init(GameState* game)
+bool board_init(Board* board)
 {
-    game->board = board_make();
-    board_setup(&game->board);
+    if (board == NULL)
+        return false;
+
+    *board = board_make();
+
+    return board_setup(board);
 }
+
+
 
 ============================================================
-FILE: ./src\game.h
+FILE: .\src\board.h
 ============================================================
 
-#ifndef GAME_H
-#define GAME_H
+#ifndef BOARD_H
+#define BOARD_H
 
 #include <stdbool.h>
-#include "pieces.h"
 
 #define BOARD_SIZE (ROW_COUNT * COLUMN_COUNT)
 #define POSITION_STRING_SIZE 132
+#define INIT_PIECE_COUNT 37
 
 typedef enum {
     COLUMN_A, COLUMN_B, COLUMN_C, COLUMN_D, COLUMN_E, COLUMN_F,
@@ -242,9 +549,25 @@ typedef enum {
 } Row;
 
 typedef struct {
-    char column;
     int row;
+    char column;
 } Position;
+
+typedef enum {
+    PARTY_D, PARTY_A,
+    PARTY_COUNT, PARTY_NONE
+} Party;
+
+typedef enum {
+    RANK_P, RANK_K,
+	RANK_COUNT, RANK_NONE
+} Rank;
+
+typedef struct {
+    Party party;
+    Rank rank;
+    int id;
+} Piece;
 
 typedef enum {
     Edge, Castle, Open
@@ -255,329 +578,1212 @@ typedef struct {
     Row row;
     CType type;
     Piece piece;
-    bool occupied;
 } Cell;
 
 typedef struct {
     Cell cells[BOARD_SIZE];
 } Board;
 
-typedef struct {
-    Board board;
-} GameState;
-
-const char* game_title(void);
-const char* game_version(void);
-
 Board board_make(void);
-void board_setup(Board* board);
+bool board_setup(Board* board); 
 bool board_position_from_string(Board* board, const char* position);
 bool board_position_to_string(const Board* board, char position[POSITION_STRING_SIZE]);
 
-void game_init(GameState* game);
+bool board_init(Board* board);
 
 #endif
 
+
+
 ============================================================
-FILE: ./src\main.c
+FILE: .\src\main.c
 ============================================================
 
-#include <stdlib.h>
-#include <time.h>
-#include "raylib.h"
-#include "game.h"
-#include "render.h"
+/* Hnefatal - Jeu de stratégie inspiré du Hnefatafl
+		réalisé par David Dakeu, le 11/11/2026
+		pour l'utiliser (faux pour le moment):
+			gcc -Wall hnefatal.c
+			./a.out
+*/
+#include <stdio.h>
+#include <string.h>
+#include "rules.h"
+#include "board.h"
+#include "ui.h"
 
-int main(void)
+const char* game_title(void) { return "HNEFATAL"; }
+const char* game_version(void) { return "0.3.0"; }
+
+void print_help(void)
 {
-    srand((unsigned)time(NULL));
-    const char* title = TextFormat("%s v%s", game_title(), game_version());
-    InitWindow(SCREEN_W, SCREEN_H, title);
-    SetTargetFPS(60);
+	printf("\n========== %s %s - AIDE ==========\n\n", game_title(void), game_version(void));
 
-    GameState game;
-    game_init(&game);
-    RenderState view = { 0 };
+	printf("OBJECTIF :\n");
+	printf("  Les attaquants tentent de capturer le roi défenseur.\n");
+	printf("  Les défenseurs tentent de faire échapper leur roi. (Le bord du plateau)\n");
+	
+	printf("COMMANDES :\n");
+	printf("  F2 to F5   Deplacer une piece de F2 vers F5.\n");
+	printf("  --help     Afficher cette aide.\n");
+	printf("  FF         Abandonner la partie.\n");
+	printf("  Q          Quitter le jeu.\n\n");
 
-    while (!WindowShouldClose())
-    {
-        float dt = GetFrameTime();
+	printf("COMMENT JOUER :\n");
+	printf("  - Les joueurs jouent chacun leur tour.\n");
+	printf("  - Entrez la position de depart et la destination.\n");
+	printf("  - Les deplacements se font horizontalement ou verticalement.\n");
+	printf("  - Une piece ne peut pas traverser une autre piece.\n");
+	printf("  - Seul le roi peut occuper ou traverser le chateau central.\n\n");
+	
+	printf("REGLES DE CAPTURE :\n");
+	printf("  - Une piece est capturée si elle est en sandwich par deux pieces ennemies.\n");
+	printf("  - Un groupe de pieces peut être capturé si elles sont encerclées par des pieces ennemies.\n");
+	printf("  - Contrairement au bord du plateau, le chateau central non-occupé compte comme une piece ennemie.\n");
 
-        if (IsKeyPressed(KEY_SPACE)) game_init(&game);   /* redistribuer (debug) */
-        render_update(&view, dt);
+	printf("=====================================\n\n");
+}
 
-        BeginDrawing();
-        render_draw(&view, &game);
-        EndDrawing();
+int main(void) {
+	char to_col = 'A', from_col = 'A';
+	int  to_row = 1, from_row = 1, game_over = 0;
+	Party turn_player = PARTY_A;
+	Board board;
+
+	Position last_move;
+	int has_last_move = 0;
+
+	if (!board_init(&board)) {
+		fprintf(stderr, "Erreur lors de l'initialisation du plateau.\n");
+		return 1;
+	}
+
+	print_help();
+
+	do { /* __ boucle sur les coups joués au sein d'une partie */
+		turn_player = (turn_player == PARTY_A) ? PARTY_D : PARTY_A;
+
+		render_board(&board, has_last_move ? &last_move : NULL);
+		printf("Tour du joueur %c : ", turn_player == PARTY_A ? 'A' : 'D');
+
+		Position from_pos, to_pos;
+		MoveResult result;
+		do {
+			char input[100];
+			char extra;
+			char command[7], command1, command2;
+
+			if (fgets(input, sizeof(input), stdin) == NULL)
+				return 0;
+
+			/* --help */
+			if (sscanf(input, " %6s %c", command, &extra) == 1 &&
+				strcmp(command, "--help") == 0) {
+				print_help();
+				result = MOVE_ERR_BAD_ARGUMENT;
+				continue;
+			}
+
+			/* Quitter sans déclarer de vainqueur */
+			if (sscanf(input, " %c %c", &command1, &extra) == 1 &&
+				(command1 == 'Q' || command1 == 'q')) {
+				printf("Fermeture du jeu.\n");
+				return 0;
+			}
+
+			/* Abandonner la partie */
+			if (sscanf(input, " %c%c %c", &command1, &command2, &extra) == 2 &&
+				(command1 == 'F' || command1 == 'f') &&
+				(command2 == 'F' || command2 == 'f')) {
+
+				printf("Le joueur %c abandonne. Victoire du joueur %c !\n",
+					turn_player == PARTY_A ? 'A' : 'D',
+					turn_player == PARTY_A ? 'D' : 'A');
+
+				game_over = 1;
+				break;
+			}
+
+			/* Lire un déplacement */
+			if (sscanf(input, " %c%d to %c%d %c",
+				&from_col, &from_row, &to_col, &to_row, &extra) != 4) {
+
+				printf("Format: F2 to F5. Try again: ");
+				result = MOVE_ERR_BAD_ARGUMENT;
+				continue;
+			}
+
+			from_pos.row = from_row;
+			from_pos.column = from_col;
+			to_pos.row = to_row;
+			to_pos.column = to_col;
+
+			result = check_move(&board, &from_pos, &to_pos, turn_player);
+
+			if (result != MOVE_OK)
+				printf("%s Try again: ", move_error_message(result));
+
+		} while (result != MOVE_OK);
+
+		if (game_over) {
+			break;
+		}
+
+		apply_move(&board, &from_pos, &to_pos);
+
+		last_move = to_pos;
+		has_last_move = 1;
+
+		check_capture(&board, &to_pos);
+
+		/* test état partie */
+		switch (is_game_over(&board)) {
+		case 0:
+			game_over = 0;
+			break;
+
+		case 1:
+			printf("Les attaquants ont réussi à capturer le roi!\n");
+			game_over = 1;
+			break;
+
+		case 2:
+			printf("Les défenseurs ont réussi à exfiltrer leur roi!\n");
+			game_over = 1;
+			break;
+
+		default:
+			printf("Il n'y a plus d'interêt à capturer le roi qui a perdu tout ses défenseurs! Match nul.\n");
+			game_over = 1;
+			break;
+		}
+	} while (!game_over);
+	render_board(&board, has_last_move ? &last_move : NULL);
+
+	/* __ Fin du programme */
+	printf("GG\n");
+	return 0;
+}
+
+============================================================
+FILE: .\src\rules.c
+============================================================
+
+/*
+ * rules.c - drop-in replacement for your rules.c.
+ * Move check with error codes, captures, apply_move, is_game_over.
+ *
+ * COORDINATES
+ *   A Position holds what the player typed: column 'A'-'K', row 1-11.
+ *   Inside this file every function works with 0-based integers
+ *   (row 0-10, column 0-10). The conversion is done once, in row_of()
+ *   and col_of(), and only there.
+ *
+ * RULES IMPLEMENTED (see section 6 of the report)
+ *   - Sandwich: the mover captures an enemy piece (never the king) held
+ *     in a straight line between the moved piece and a friendly piece,
+ *     or between the moved piece and the EMPTY castle.
+ *   - Encirclement: the mover captures an enemy group (2+ pieces, connected
+ *     orthogonally) when none of its pieces can move. A group that touches
+ *     the board edge, or contains the king, is never captured this way.
+ *   - King: captured when attackers occupy all four adjacent squares.
+ *   - Encirclement is applied before sandwiches. Only the mover captures.
+ *   - Board edges are never hostile.
+ */
+#include <stddef.h>
+#include "rules.h"
+
+#define DIRECTION_COUNT 4
+
+  /* The four orthogonal steps: { row step, column step }. */
+static const int DIRECTIONS[DIRECTION_COUNT][2] = {
+    { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 }
+};
+
+/* All the pieces of one side that touch each other. */
+typedef struct {
+    int cells[BOARD_SIZE];  /* board indexes of the pieces in the group */
+    int size;
+    bool touches_edge;      /* one piece is on an Edge cell             */
+    bool can_move;          /* at least one piece has a legal move      */
+} Group;
+
+
+/* ================== small helpers ================== */
+
+/* Convert to int first, then do ALL arithmetic on ints. Row and Column are
+ * unsigned in gcc, so a difference computed on them (to->row - from->row)
+ * wraps around to a huge number instead of becoming negative. */
+static int row_of(const Position* pos) { return pos->row - 1; }
+static int col_of(const Position* pos) { return pos->column - 'A'; }
+
+static bool in_bounds(int row, int col)
+{
+    return row >= 0 && row < ROW_COUNT && col >= 0 && col < COLUMN_COUNT;
+}
+
+static int cell_index(int row, int col)
+{
+    return row * COLUMN_COUNT + col;
+}
+
+static Party opponent_of(Party party)
+{
+    return (party == PARTY_A) ? PARTY_D : PARTY_A;
+}
+
+/* -1, 0 or +1 depending on the sign of value. */
+static int sign(int value)
+{
+    if (value > 0) {
+        return 1;
+    }
+    if (value < 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static void remove_piece(Cell* cell)
+{
+    cell->piece.party = PARTY_NONE;
+    cell->piece.rank = RANK_NONE;
+    cell->piece.id = 0;
+}
+
+
+/* ================== move check ================== */
+
+const char* move_error_message(MoveResult result)
+{
+    switch (result) {
+    case MOVE_OK:                     return "Move accepted.";
+    case MOVE_ERR_BAD_ARGUMENT:       return "Internal error: missing argument.";
+    case MOVE_ERR_OUT_OF_BOARD:       return "That square is outside the board.";
+    case MOVE_ERR_NO_PIECE:           return "There is no piece on the start square.";
+    case MOVE_ERR_NOT_YOUR_PIECE:     return "That piece is not yours.";
+    case MOVE_ERR_SAME_SQUARE:        return "The piece must move to another square.";
+    case MOVE_ERR_NOT_STRAIGHT:       return "Pieces move along a row or a column only.";
+    case MOVE_ERR_DESTINATION_OCCUPIED: return "The destination is occupied.";
+    case MOVE_ERR_CASTLE_RESERVED:    return "Only the king may stop on the castle.";
+    case MOVE_ERR_PATH_BLOCKED:       return "A piece or the castle is in the way.";
+    }
+    return "Unknown error.";
+}
+
+/* The real check, on 0-based coordinates. Also used by the capture code. */
+static MoveResult check_move_rc(const Board* board, int from_row, int from_col,
+    int to_row, int to_col, Party player)
+{
+    if (!in_bounds(from_row, from_col) || !in_bounds(to_row, to_col)) {
+        return MOVE_ERR_OUT_OF_BOARD;
     }
 
-    CloseWindow();
+    const Cell* start = &board->cells[cell_index(from_row, from_col)];
+    const Cell* dest = &board->cells[cell_index(to_row, to_col)];
+
+    if (start->piece.party == PARTY_NONE) {
+        return MOVE_ERR_NO_PIECE;
+    }
+    if (start->piece.party != player) {
+        return MOVE_ERR_NOT_YOUR_PIECE;
+    }
+    if (from_row == to_row && from_col == to_col) {
+        return MOVE_ERR_SAME_SQUARE;
+    }
+    if (from_row != to_row && from_col != to_col) {
+        return MOVE_ERR_NOT_STRAIGHT;
+    }
+    if (dest->piece.party != PARTY_NONE) {
+        return MOVE_ERR_DESTINATION_OCCUPIED;
+    }
+    if (dest->type == Castle && start->piece.rank != RANK_K) {
+        return MOVE_ERR_CASTLE_RESERVED;
+    }
+    if (player != PARTY_A && player != PARTY_D) {
+        return MOVE_ERR_BAD_ARGUMENT; 
+    }
+
+    /* Walk from the start toward the destination, one square at a time.
+     * Every step is -1, 0 or +1, so the walk cannot jump out of the board. */
+    int row_step = sign(to_row - from_row);
+    int col_step = sign(to_col - from_col);
+    int row = from_row + row_step;
+    int col = from_col + col_step;
+
+    while (row != to_row || col != to_col) {
+        const Cell* between = &board->cells[cell_index(row, col)];
+        if (between->piece.party != PARTY_NONE || between->type == Castle) {
+            return MOVE_ERR_PATH_BLOCKED;
+        }
+        row += row_step;
+        col += col_step;
+    }
+    return MOVE_OK;
+}
+
+MoveResult check_move(const Board* board, const Position* from,
+    const Position* to, Party player)
+{
+    if (board == NULL || from == NULL || to == NULL) {
+        return MOVE_ERR_BAD_ARGUMENT;
+    }
+    return check_move_rc(board, row_of(from), col_of(from),
+        row_of(to), col_of(to), player);
+}
+
+bool is_move_valid(const Board* board, const Position* from,
+    const Position* to, Party player)
+{
+    return check_move(board, from, to, player) == MOVE_OK;
+}
+
+
+/* ================== captures ================== */
+
+/* Can the square (row, col) be the far end of a sandwich for 'mover'?
+ * Yes if it holds a friendly piece, or if it is the empty castle.
+ * Off the board: no (board edges are not hostile). */
+static bool is_sandwich_partner(const Board* board, int row, int col, Party mover)
+{
+    if (!in_bounds(row, col)) {
+        return false;
+    }
+
+    const Cell* cell = &board->cells[cell_index(row, col)];
+
+    if (cell->piece.party == PARTY_NONE) {
+        return cell->type == Castle;
+    }
+
+    return cell->piece.party == mover;
+}
+
+/* Sandwich captures around the piece that has just moved to (row, col). */
+static int capture_sandwiches(Board* board, int row, int col, Party mover)
+{
+    int captured = 0;
+
+    for (int d = 0; d < DIRECTION_COUNT; d++) {
+        int victim_row = row + DIRECTIONS[d][0];
+        int victim_col = col + DIRECTIONS[d][1];
+        int far_row = victim_row + DIRECTIONS[d][0];
+        int far_col = victim_col + DIRECTIONS[d][1];
+
+        if (!in_bounds(victim_row, victim_col)) {
+            continue;
+        }
+
+        Cell* victim = &board->cells[cell_index(victim_row, victim_col)];
+
+        if (victim->piece.party != opponent_of(mover)) {
+            continue;
+        }
+
+        if (is_sandwich_partner(board, far_row, far_col, mover)) {
+            remove_piece(victim);
+            captured++;
+        }
+    }
+    return captured;
+}
+
+/* Collects the group of 'side' that contains the piece at index 'start',
+ * using a stack instead of recursion. Every piece is pushed at most once
+ * (visited[] is set when it is pushed), so the stack never exceeds BOARD_SIZE. */
+static void explore_group(const Board* board, int start, Party side,
+    bool visited[BOARD_SIZE], Group* group)
+{
+    int stack[BOARD_SIZE];
+    int top = 0;
+
+    group->size = 0;
+    group->touches_edge = false;
+    group->can_move = false;
+
+    stack[top++] = start;
+    visited[start] = true;
+
+    while (top > 0) {
+        int index = stack[--top];
+        const Cell* cell = &board->cells[index];
+        int row = index / COLUMN_COUNT;
+        int col = index % COLUMN_COUNT;
+
+        group->cells[group->size++] = index;
+        if (cell->type == Edge) {
+            group->touches_edge = true;
+        }
+
+        for (int d = 0; d < DIRECTION_COUNT; d++) {
+            int next_row = row + DIRECTIONS[d][0];
+            int next_col = col + DIRECTIONS[d][1];
+
+            if (!in_bounds(next_row, next_col)) {
+                continue;
+            }
+
+            int next = cell_index(next_row, next_col);
+
+            if (board->cells[next].piece.party == side) {
+                /* same side and touching: part of the group */
+                if (!visited[next]) {
+                    visited[next] = true;
+                    stack[top++] = next;
+                }
+            }
+            else if (check_move_rc(board, row, col, next_row, next_col, side) == MOVE_OK) {
+                /* A rook-like piece can move only if it can step on a
+                 * neighbouring square, so testing the 4 neighbours is the same as
+                 * testing every destination (as long as nobody crosses the castle). */
+                group->can_move = true;
+            }
+        }
+    }
+}
+
+/* Encirclement: only the groups touching the piece that has just moved
+ * can have become enclosed by this move. */
+static int capture_encircled_groups(Board* board, int row, int col, Party mover)
+{
+    Party side = opponent_of(mover);
+    bool visited[BOARD_SIZE] = { false };
+    Group group;
+    int captured = 0;
+
+    for (int d = 0; d < DIRECTION_COUNT; d++) {
+        int next_row = row + DIRECTIONS[d][0];
+        int next_col = col + DIRECTIONS[d][1];
+
+        if (!in_bounds(next_row, next_col)) {
+            continue;
+        }
+
+        int start = cell_index(next_row, next_col);
+
+        if (board->cells[start].piece.party != side || visited[start]) {
+            continue;
+        }
+
+        explore_group(board, start, side, visited, &group);
+
+        if (group.size >= 2 && !group.touches_edge && !group.can_move) {
+            for (int i = 0; i < group.size; i++) {
+                remove_piece(&board->cells[group.cells[i]]);
+            }
+            captured += group.size;
+        }
+    }
+    return captured;
+}
+
+int check_capture(Board* board, const Position* moved_to)
+{
+    if (board == NULL || moved_to == NULL) {
+        return 0;
+    }
+
+    int row = row_of(moved_to);
+    int col = col_of(moved_to);
+
+    if (!in_bounds(row, col)) {
+        return 0;
+    }
+
+    Party mover = board->cells[cell_index(row, col)].piece.party;
+
+    if (mover == PARTY_NONE) {
+        return 0;
+    }
+
+    int captured = 0;
+
+    captured += capture_encircled_groups(board, row, col, mover);
+    captured += capture_sandwiches(board, row, col, mover);
+    return captured;
+}
+
+
+/* ================== move and end of game ================== */
+
+void apply_move(Board* board, const Position* from, const Position* to)
+{
+    if (board == NULL || from == NULL || to == NULL)
+        return;
+
+    int from_row = row_of(from);
+    int from_col = col_of(from);
+    int to_row = row_of(to);
+    int to_col = col_of(to);
+
+    if (!in_bounds(from_row, from_col) || !in_bounds(to_row, to_col))
+        return;
+
+    Cell* start = &board->cells[cell_index(from_row, from_col)];
+
+    if (check_move_rc(board, from_row, from_col,
+        to_row, to_col, start->piece.party) != MOVE_OK)
+        return;
+
+    Cell* dest = &board->cells[cell_index(to_row, to_col)];
+
+    dest->piece = start->piece;
+    remove_piece(start);
+}
+
+int is_game_over(const Board* board)
+{
+    /* 0: not over, 1: attackers win, 2: defenders win, 3: draw */
+    if (board == NULL) {
+        return 0;
+    }
+
+    bool king_found = false;
+    bool king_on_edge = false;
+    int defenders = 0, attackers = 0;              /* defender pawns, the king is not counted */
+
+    for (int i = 0; i < BOARD_SIZE; i++) {
+        const Cell* cell = &board->cells[i];
+
+        if (cell->piece.party == PARTY_NONE) {
+            continue;
+        }
+        if (cell->piece.rank == RANK_K) {
+            king_found = true;
+            if (cell->type == Edge) {
+                king_on_edge = true;
+            }
+        }
+        else if (cell->piece.party == PARTY_D) {
+            defenders++;
+        }
+        else if (cell->piece.party == PARTY_A) {
+            attackers++;
+        }
+    }
+
+    if (!king_found) {
+        return 1;
+    }
+    if (king_on_edge) {
+        return 2;
+    }
+    if (defenders == 0) {
+        return 3;
+    }
+	if (attackers == 0) {
+		return 2;
+	}
     return 0;
 }
 
 ============================================================
-FILE: ./src\pieces.c
+FILE: .\src\rules.h
 ============================================================
 
-#include <stdio.h>
-#include <assert.h>
-#include <stdlib.h>
-#include "pieces.h"
-
-static const char* PARTY_NAMES[PARTY_COUNT] = {
-    [PARTY_D] = "Defender", [PARTY_A] = "Attacker"
-};
-
-static const char* RANK_NAMES[RANK_COUNT] = {
-    [RANK_P] = "Pawn", [RANK_K] = "King"
-};
-
-const char* party_name(Party party) { return PARTY_NAMES[party]; }
-const char* rank_name(Rank rank) { return RANK_NAMES[rank]; }
-
-void piece_print(Piece piece)
-{
-    printf("%s %s\n", rank_name(piece.rank), party_name(piece.party));
-}
-
-BoardP boardp_make(void)
-{
-    BoardP boardp;
-    boardp.count = 0;
-    boardp.a_count = 0;
-    boardp.d_count = 0;
-	for (Party party = 0; party < PARTY_COUNT; party++) {
-
-		if (party == PARTY_D) {
-			while (boardp.d_count < 12) {
-				boardp.pieces[boardp.count].party = party;
-				boardp.pieces[boardp.count].rank = RANK_P;
-				boardp.pieces[boardp.count].id = boardp.count;
-				boardp.count++;
-				boardp.d_count++;
-			}
-			boardp.pieces[boardp.count].party = party;
-			boardp.pieces[boardp.count].rank = RANK_K;
-			boardp.pieces[boardp.count].id = boardp.count;
-			boardp.count++;
-			boardp.d_count++;
-		}
-
-		if (party == PARTY_A) {
-			while (boardp.a_count < 24) {
-				boardp.pieces[boardp.count].party = party;
-				boardp.pieces[boardp.count].rank = RANK_P;
-				boardp.pieces[boardp.count].id = boardp.count;
-				boardp.count++;
-				boardp.a_count++;
-			}
-		}
-	}
-	
-    return boardp;
-} 
-
-============================================================
-FILE: ./src\pieces.h
-============================================================
-
-#ifndef PIECES_H
-#define PIECES_H
-
-typedef enum { 
-    PARTY_D, PARTY_A, 
-    PARTY_COUNT
-} Party;
-
-typedef enum {
-    RANK_P, RANK_K,
-    RANK_COUNT
-} Rank;
-
-#define INIT_PIECE_COUNT 37
-
-typedef struct {
-    Party party;
-    Rank rank;
-    int id;
-} Piece;
-
-typedef struct {
-    Piece pieces[INIT_PIECE_COUNT];
-	int a_count;
-	int d_count;
-    int  count;          
-} BoardP;
-
-const char* rank_name(Rank rank);
-const char* party_name(Party party);
-void piece_print(Piece piece);
-BoardP boardp_make(void);     
-
-#endif
-
-============================================================
-FILE: ./src\render.c
-============================================================
-
-#include <stdbool.h>
-#include "raylib.h"
-#include "render.h"
-
-static void draw_board(const Board* board)
-{
-
-}
-
-void render_update(RenderState* view, float dt)
-{
-    Vector2 mouse = GetMousePosition();
-    view->hovered = -1;
-
-    for (int i = 0; i < HAND_SIZE; i++) {
-        bool over = CheckCollisionPointRec(mouse, hand_piece_rect(i));
-        if (over) view->hovered = i;
-
-        float target = over ? 24.0f : 0.0f;
-        float k = 12.0f * dt;
-        if (k > 1.0f) k = 1.0f;
-        view->lift[i] += (target - view->lift[i]) * k;
-    }
-}
-
-void render_draw(const RenderState* view, const GameState* game)
-{
-    ClearBackground((Color) { 24, 28, 34, 255 });
-
-    draw_board
-
-    DrawText(TextFormat("boardp: %d", game->boardp.count), 10, 10, 20, RAYWHITE);
-    DrawFPS(10, 36);
-}
-
-============================================================
-FILE: ./src\render.h
-============================================================
-
-#ifndef RENDER_H
-#define RENDER_H
-
-#include "game.h"
-
-#define SCREEN_W 1280
-#define SCREEN_H 720
-
-typedef struct {
-    float lift[HAND_SIZE];   /* hauteur de survol de chaque carte (pixels) */
-    int   hovered;           /* index de la carte survolee, -1 si aucune */
-} RenderState;
-
-void render_update(RenderState* view, float dt);
-void render_draw(const RenderState* view, const GameState* game);
-
-#endif
-
-============================================================
-FILE: ./src\rules.c
-============================================================
-
-#include <stddef.h>
-#include "rules.h"
-
-bool is_move_valid(const Board* board, const Position* from, const Position* to)
-{
-	if (board == NULL || from == NULL || to == NULL)
-		return false;
-	// Check if the move is on the same row or column
-	if (from->row != to->row && from->column != to->column)
-		return false;
-	// Check if the path is clear
-	int row_step = (to->row - from->row) ? ((to->row - from->row) / abs(to->row - from->row)) : 0;
-	int col_step = (to->column - from->column) ? ((to->column - from->column) / abs(to->column - from->column)) : 0;
-	int current_row = from->row + row_step;
-	int current_col = from->column + col_step;
-	while (current_row != to->row || current_col != to->column) {
-		const Cell* cell = &board->cells[(current_row - 1) * COLUMN_COUNT + (current_col - 'A')];
-		if (cell->occupied)
-			return false;
-		current_row += row_step;
-		current_col += col_step;
-	}
-	return true;
-}
-
-bool is_capture_valid(const Board* board, const Position* pos)
-{
-	if (board == NULL || pos == NULL)
-		return false;
-	// Check adjacent cells for enemy pieces
-	int directions[4][2] = { {0, 1}, {1, 0}, {0, -1}, {-1, 0} };
-	for (int i = 0; i < 4; i++) {
-		int adj_row = pos->row + directions[i][0];
-		int adj_col = pos->column + directions[i][1];
-		if (adj_row >= 1 && adj_row <= ROW_COUNT && adj_col >= 'A' && adj_col <= 'K') {
-			const Cell* cell = &board->cells[(adj_row - 1) * COLUMN_COUNT + (adj_col - 'A')];
-			if (cell->occupied && cell->piece.party != board->cells[(pos->row - 1) * COLUMN_COUNT + (pos->column - 'A')].piece.party) {
-				// Check if the enemy piece is surrounded
-				int surround_count = 0;
-				for (int j = 0; j < 4; j++) {
-					int check_row = adj_row + directions[j][0];
-					int check_col = adj_col + directions[j][1];
-					if (check_row >= 1 && check_row <= ROW_COUNT && check_col >= 'A' && check_col <= 'K') {
-						const Cell* check_cell = &board->cells[(check_row - 1) * COLUMN_COUNT + (check_col - 'A')];
-						if (!check_cell->occupied || check_cell->piece.party == board->cells[(pos->row - 1) * COLUMN_COUNT + (pos->column - 'A')].piece.party) {
-							surround_count++;
-						}
-					}
-				}
-				if (surround_count >= 2)
-					return true;
-			}
-		}
-	}
-	return false;
-}
-
-bool is_game_over(const Board* board)
-{
-	if (board == NULL)
-		return false;
-	// Check if the king is captured
-	for (int i = 0; i < BOARD_SIZE; i++) {
-		const Cell* cell = &board->cells[i];
-		if (cell->occupied && cell->piece.rank == RANK_K) {
-			return false; // King is still on the board
-		}
-	}
-	return true; // King is captured, game over
-}
-
-void apply_move(Board* board, const Position* from, const Position* to)
-{
-	if (board == NULL || from == NULL || to == NULL)
-		return;
-	Cell* from_cell = &board->cells[(from->row - 1) * COLUMN_COUNT + (from->column - 'A')];
-	Cell* to_cell = &board->cells[(to->row - 1) * COLUMN_COUNT + (to->column - 'A')];
-	if (from_cell->occupied && !to_cell->occupied) {
-		to_cell->piece = from_cell->piece;
-		to_cell->occupied = true;
-		from_cell->occupied = false;
-	}
-}
-
-============================================================
-FILE: ./src\rules.h
-============================================================
-
+/*
+ * rules.h - drop-in replacement for your rules.h
+ */
 #ifndef RULES_H
 #define RULES_H
 
 #include <stdbool.h>
-#include "pieces.h"
+#include "board.h"
 
-bool is_move_valid(const Board* board, const Position* from, const Position* to);
-bool is_capture_valid(const Board* board, const Position* pos);
-bool is_game_over(const Board* board);
+ /* Result of a move check. MOVE_OK means the move is legal;
+  * every other value says which rule the move breaks.
+  * The checks are done in this order, the first failure is returned. */
+typedef enum {
+    MOVE_OK = 0,
+    MOVE_ERR_BAD_ARGUMENT,        /* a NULL pointer was passed                  */
+    MOVE_ERR_OUT_OF_BOARD,        /* start or destination is outside A-K / 1-11 */
+    MOVE_ERR_NO_PIECE,            /* the start square is empty                  */
+    MOVE_ERR_NOT_YOUR_PIECE,      /* the piece belongs to the other player      */
+    MOVE_ERR_SAME_SQUARE,         /* start and destination are the same square  */
+    MOVE_ERR_NOT_STRAIGHT,        /* not along a row or a column                */
+    MOVE_ERR_DESTINATION_OCCUPIED,/* another piece is on the destination        */
+    MOVE_ERR_CASTLE_RESERVED,     /* only the king may stop on the castle       */
+    MOVE_ERR_PATH_BLOCKED         /* a piece, or the castle, is in the way      */
+} MoveResult;
+
+/* Says why a move is refused (text shown to the player). */
+const char* move_error_message(MoveResult result);
+
+/* Checks a move for 'player'. Returns MOVE_OK or the first rule broken. */
+MoveResult check_move(const Board* board, const Position* from,
+    const Position* to, Party player);
+
+/* Same check, as a yes/no answer. */
+bool is_move_valid(const Board* board, const Position* from,
+    const Position* to, Party player);
+
+/* Applies every capture caused by the piece that has just moved to 'moved_to'.
+ * Order: encirclement, then sandwich, then king capture.
+ * Returns the number of pieces removed from the board. */
+int check_capture(Board* board, const Position* moved_to);
+
+/* Moves the piece. Does nothing if the move is not possible
+ * (call check_move() first). */
 void apply_move(Board* board, const Position* from, const Position* to);
 
+/* 0: not over, 1: attackers win (king captured), 2: defenders win (king on an
+ * edge), 3: draw (no defender left besides the king). */
+int is_game_over(const Board* board);
+
 #endif
+
+============================================================
+FILE: .\src\ui.c
+============================================================
+
+
+#include "ui.h"
+#include <stdio.h>
+
+#define RESET       "\x1b[0m"
+#define BORDER      "\x1b[90m"
+#define DEFENDER    "\x1b[94;1m"
+#define ATTACKER    "\x1b[91;1m"
+#define KING        "\x1b[96;1m"
+#define HIGHLIGHT   "\x1b[43;1m"
+#define CASTLE      "\x1b[33;1m"
+
+void render_board(const Board* board, const Position* last_move)
+{
+    if (board == NULL)
+        return;
+
+    printf("\n");
+
+    for (int row = ROW_COUNT - 1; row >= 0; row--) {
+        printf(" %2d  ", row + 1);
+
+        for (int col = 0; col < COLUMN_COUNT; col++) {
+            const Cell* cell = &board->cells[row * COLUMN_COUNT + col];
+
+            int highlighted = last_move != NULL &&
+                last_move->row == row + 1 &&
+                last_move->column == 'A' + col;
+
+            char symbol = ' ';
+            const char* foreground = RESET;
+
+            if (cell->piece.party == PARTY_A && cell->piece.rank == RANK_P) {
+                symbol = 'a';
+                foreground = ATTACKER;
+            }
+            else if (cell->piece.party == PARTY_D && cell->piece.rank == RANK_P) {
+                symbol = 'd';
+                foreground = DEFENDER;
+            }
+            else if (cell->piece.party == PARTY_D && cell->piece.rank == RANK_K) {
+                symbol = 'k';
+                foreground = KING;
+            }
+            else if (cell->piece.party == PARTY_NONE && cell->type == Castle) {
+                symbol = '+';
+                foreground = CASTLE;
+            }
+
+            if (highlighted)
+                printf("%s", HIGHLIGHT);
+
+            printf("%s %c %s", foreground, symbol, RESET);
+
+            if (col < COLUMN_COUNT - 1)
+                printf("%s|%s", BORDER, RESET);
+        }
+
+        printf("\n");
+
+        if (row > 0) {
+            printf("     ");
+
+            for (int col = 0; col < COLUMN_COUNT; col++) {
+                printf("%s---%s", BORDER, RESET);
+
+                if (col < COLUMN_COUNT - 1)
+                    printf("%s+%s", BORDER, RESET);
+            }
+
+            printf("\n");
+        }
+    }
+
+    printf("     ");
+
+    for (int col = 0; col < COLUMN_COUNT; col++)
+        printf(" %c  ", 'A' + col);
+
+    printf("\n\n");
+}
+
+
+============================================================
+FILE: .\src\ui.h
+============================================================
+
+#ifndef UI_H
+#define UI_H
+
+#include "board.h"
+
+void render_board(const Board* board, const Position* last_move);
+
+#endif
+
+
+============================================================
+FILE: .\tests\test_board.c
+============================================================
+
+
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "board.h"
+
+int main(void)
+{
+    Board board = board_make();
+
+    // Board dimensions and cell types
+    assert(board.cells[0].type == Edge);
+    assert(board.cells[5 * COLUMN_COUNT + 5].type == Castle);
+    assert(board.cells[1 * COLUMN_COUNT + 1].type == Open);
+
+    // Load a simple position containing one king
+    const char* position =
+        "11/11/11/11/11/5k5/11/11/11/11/11";
+
+    assert(board_position_from_string(&board, position));
+
+    // Verify king placement
+    Cell* king = &board.cells[5 * COLUMN_COUNT + 5];
+
+    assert(king->piece.party != PARTY_NONE);
+    assert(king->piece.rank == RANK_K);
+    assert(king->piece.party == PARTY_D);
+
+    // Serialize and compare
+    char result[POSITION_STRING_SIZE];
+
+    assert(board_position_to_string(&board, result));
+    assert(strcmp(position, result) == 0);
+
+    // Reject invalid positions
+    assert(!board_position_from_string(&board, NULL));
+
+    printf("test_board: OK\n");
+
+    return 0;
+}
+
+
+============================================================
+FILE: .\tests\test_capture.c
+============================================================
+
+/*
+ * test_capture.c - tests for check_move() and check_capture().
+ * Build: gcc -std=c11 -Wall -Wextra -Isrc tests/test_capture.c src/board.c src/rules.c -o build/test_capture
+ * 
+ */
+#include <assert.h>
+#include <stdio.h>
+
+#include "rules.h"
+
+/* ---------- helpers: build positions on an empty board ---------- */
+
+static Position at(char column, int row)
+{
+    Position pos;
+    pos.column = column;
+    pos.row = row;
+    return pos;
+}
+
+static Cell* cell(Board* board, char column, int row)
+{
+    return &board->cells[(row - 1) * COLUMN_COUNT + (column - 'A')];
+}
+
+static void put(Board* board, char column, int row, Party party, Rank rank)
+{
+    cell(board, column, row)->piece.party = party;
+    cell(board, column, row)->piece.rank = rank;
+    cell(board, column, row)->piece.id = 1;
+}
+
+static void put_attacker(Board* board, char column, int row) { put(board, column, row, PARTY_A, RANK_P); }
+static void put_defender(Board* board, char column, int row) { put(board, column, row, PARTY_D, RANK_P); }
+static void put_king(Board* board, char column, int row)     { put(board, column, row, PARTY_D, RANK_K); }
+
+static bool is_empty(Board* board, char column, int row)
+{
+    return cell(board, column, row)->piece.party == PARTY_NONE;
+}
+
+static MoveResult move(const Board* board, char c1, int r1, char c2, int r2, Party player)
+{
+    Position from = at(c1, r1);
+    Position to = at(c2, r2);
+    return check_move(board, &from, &to, player);
+}
+
+static int capture(Board* board, char column, int row)
+{
+    Position pos = at(column, row);
+    return check_capture(board, &pos);
+}
+
+/* ---------- move check ---------- */
+
+static void test_moves_in_all_directions(void)
+{
+    Board board = board_make();
+    put_attacker(&board, 'E', 5);
+
+    /* includes left and down moves of 2 squares or more (the old crash) */
+    assert(move(&board, 'E', 5, 'E', 8, PARTY_A) == MOVE_OK);   /* up    3 */
+    assert(move(&board, 'E', 5, 'E', 2, PARTY_A) == MOVE_OK);   /* down  3 */
+    assert(move(&board, 'E', 5, 'H', 5, PARTY_A) == MOVE_OK);   /* right 3 */
+    assert(move(&board, 'E', 5, 'B', 5, PARTY_A) == MOVE_OK);   /* left  3 */
+    assert(move(&board, 'E', 5, 'E', 4, PARTY_A) == MOVE_OK);   /* down  1 */
+    assert(move(&board, 'E', 5, 'D', 5, PARTY_A) == MOVE_OK);   /* left  1 */
+}
+
+static void test_move_errors(void)
+{
+    Board board = board_make();
+    put_attacker(&board, 'B', 2);
+    put_attacker(&board, 'B', 5);
+    put_defender(&board, 'E', 2);
+    put_attacker(&board, 'F', 9);
+    put_king(&board, 'F', 8);
+
+    Position any = at('A', 1);
+    assert(check_move(NULL, &any, &any, PARTY_A) == MOVE_ERR_BAD_ARGUMENT);
+    assert(move(&board, 'B', 2, 'L', 2, PARTY_A) == MOVE_ERR_OUT_OF_BOARD);
+    assert(move(&board, 'B', 2, 'B', 12, PARTY_A) == MOVE_ERR_OUT_OF_BOARD);
+    assert(move(&board, 'B', 2, 'B', 0, PARTY_A) == MOVE_ERR_OUT_OF_BOARD);
+    assert(move(&board, 'C', 3, 'C', 4, PARTY_A) == MOVE_ERR_NO_PIECE);
+    assert(move(&board, 'E', 2, 'E', 3, PARTY_A) == MOVE_ERR_NOT_YOUR_PIECE);
+    assert(move(&board, 'B', 2, 'B', 2, PARTY_A) == MOVE_ERR_SAME_SQUARE);
+    assert(move(&board, 'B', 2, 'C', 3, PARTY_A) == MOVE_ERR_NOT_STRAIGHT);
+    assert(move(&board, 'B', 2, 'B', 5, PARTY_A) == MOVE_ERR_DESTINATION_OCCUPIED);
+    assert(move(&board, 'B', 2, 'B', 7, PARTY_A) == MOVE_ERR_PATH_BLOCKED);       /* B5 in the way  */
+    assert(move(&board, 'F', 9, 'F', 6, PARTY_A) == MOVE_ERR_CASTLE_RESERVED);    /* ends on castle */
+    assert(move(&board, 'F', 9, 'F', 3, PARTY_A) == MOVE_ERR_PATH_BLOCKED);       /* king in the way */
+}
+
+static void test_castle(void)
+{
+    Board board = board_make();
+    put_attacker(&board, 'F', 9);
+    put_king(&board, 'F', 8);
+
+    /* the king may stop on the castle ... */
+    assert(move(&board, 'F', 8, 'F', 6, PARTY_D) == MOVE_OK);
+    /* ... but nobody crosses it */
+    board = board_make();
+    put_attacker(&board, 'F', 9);
+    assert(move(&board, 'F', 9, 'F', 3, PARTY_A) == MOVE_ERR_PATH_BLOCKED);
+}
+
+/* ---------- sandwich ---------- */
+
+static void test_sandwich(void)
+{
+    Board board = board_make();
+
+    /* basic capture: attacker arrives on C5, defender D5, attacker E5 */
+    put_attacker(&board, 'E', 5);
+    put_defender(&board, 'D', 5);
+    put_attacker(&board, 'C', 5);
+    assert(capture(&board, 'C', 5) == 1);
+    assert(is_empty(&board, 'D', 5));
+    assert(!is_empty(&board, 'C', 5));
+
+    /* far square empty: no capture */
+    board = board_make();
+    put_defender(&board, 'D', 5);
+    put_attacker(&board, 'C', 5);
+    assert(capture(&board, 'C', 5) == 0);
+    assert(!is_empty(&board, 'D', 5));
+
+    /* far square off the board: edges are not hostile */
+    board = board_make();
+    put_defender(&board, 'A', 5);
+    put_attacker(&board, 'B', 5);
+    assert(capture(&board, 'B', 5) == 0);
+    assert(!is_empty(&board, 'A', 5));
+
+    /* empty castle is hostile */
+    board = board_make();
+    put_defender(&board, 'F', 7);
+    put_attacker(&board, 'F', 8);
+    assert(capture(&board, 'F', 8) == 1);
+    assert(is_empty(&board, 'F', 7));
+
+    /* castle occupied by the king is not hostile to attackers */
+    board = board_make();
+    put_king(&board, 'F', 6);
+    put_defender(&board, 'F', 7);
+    put_attacker(&board, 'F', 8);
+    assert(capture(&board, 'F', 8) == 0);
+    assert(!is_empty(&board, 'F', 7));
+}
+
+static void test_sandwich_exceptions(void)
+{
+    Board board = board_make();
+
+    /* moving between two enemies is safe, and captures nothing */
+    put_defender(&board, 'C', 5);
+    put_defender(&board, 'E', 5);
+    put_attacker(&board, 'D', 5);
+    assert(capture(&board, 'D', 5) == 0);
+    assert(!is_empty(&board, 'D', 5));
+
+    /* the king can be captured by a normal sandwich */
+    board = board_make();
+    put_king(&board, 'E', 5);
+    put_attacker(&board, 'D', 5);
+    put_attacker(&board, 'F', 5);
+    assert(capture(&board, 'F', 5) == 1);
+    assert(is_empty(&board, 'E', 5));
+
+    /* own pieces are never captured */
+    board = board_make();
+    put_attacker(&board, 'D', 5);
+    put_defender(&board, 'E', 5);
+    put_attacker(&board, 'C', 5);
+    assert(capture(&board, 'C', 5) == 0);
+    assert(!is_empty(&board, 'D', 5));
+
+    /* defenders capture too, with the king as the second piece */
+    board = board_make();
+    put_king(&board, 'E', 5);
+    put_attacker(&board, 'D', 5);
+    put_defender(&board, 'C', 5);
+    assert(capture(&board, 'C', 5) == 1);
+    assert(is_empty(&board, 'D', 5));
+}
+
+/* ---------- encirclement ---------- */
+
+static void test_encirclement(void)
+{
+    Board board = board_make();
+
+    /* pair C3-D3 closed by the last attacker arriving on D4.
+     * D3 would also be sandwiched (D2), but encirclement goes first:
+     * the result must be 2 pieces, not 3. */
+    put_defender(&board, 'C', 3);
+    put_defender(&board, 'D', 3);
+    put_attacker(&board, 'B', 3);
+    put_attacker(&board, 'E', 3);
+    put_attacker(&board, 'C', 2);
+    put_attacker(&board, 'D', 2);
+    put_attacker(&board, 'C', 4);
+    put_attacker(&board, 'D', 4);
+    assert(capture(&board, 'D', 4) == 2);
+    assert(is_empty(&board, 'C', 3));
+    assert(is_empty(&board, 'D', 3));
+
+    /* one neighbour left open: nothing is captured */
+    board = board_make();
+    put_defender(&board, 'C', 3);
+    put_defender(&board, 'D', 3);
+    put_attacker(&board, 'B', 3);
+    put_attacker(&board, 'E', 3);
+    put_attacker(&board, 'C', 2);
+    put_attacker(&board, 'C', 4);
+    put_attacker(&board, 'D', 4);   /* D2 stays empty */
+    assert(capture(&board, 'D', 4) == 0);
+    assert(!is_empty(&board, 'C', 3));
+    assert(!is_empty(&board, 'D', 3));
+
+    /* L-shape of three */
+    board = board_make();
+    put_defender(&board, 'C', 3);
+    put_defender(&board, 'D', 3);
+    put_defender(&board, 'D', 4);
+    put_attacker(&board, 'B', 3);
+    put_attacker(&board, 'C', 2);
+    put_attacker(&board, 'D', 2);
+    put_attacker(&board, 'E', 3);
+    put_attacker(&board, 'C', 4);
+    put_attacker(&board, 'E', 4);
+    put_attacker(&board, 'D', 5);
+    assert(capture(&board, 'D', 5) == 3);
+    assert(is_empty(&board, 'C', 3) && is_empty(&board, 'D', 3) && is_empty(&board, 'D', 4));
+
+    /* the castle counts as a wall for pieces that are not the king */
+    board = board_make();
+    put_defender(&board, 'F', 7);
+    put_defender(&board, 'G', 7);
+    put_attacker(&board, 'E', 7);
+    put_attacker(&board, 'F', 8);
+    put_attacker(&board, 'G', 8);
+    put_attacker(&board, 'H', 7);
+    put_attacker(&board, 'G', 6);
+    assert(capture(&board, 'E', 7) == 2);
+    assert(is_empty(&board, 'F', 7) && is_empty(&board, 'G', 7));
+}
+
+static void test_encirclement_exceptions(void)
+{
+    Board board = board_make();
+
+    /* a group touching the edge is never captured */
+    put_defender(&board, 'A', 3);
+    put_defender(&board, 'B', 3);
+    put_attacker(&board, 'A', 2);
+    put_attacker(&board, 'A', 4);
+    put_attacker(&board, 'B', 2);
+    put_attacker(&board, 'B', 4);
+    put_attacker(&board, 'C', 3);
+    assert(capture(&board, 'C', 3) == 0);
+    assert(!is_empty(&board, 'A', 3) && !is_empty(&board, 'B', 3));
+
+    /* a group containing the king can be captured by encirclement */
+    board = board_make();
+    put_king(&board, 'C', 3);
+    put_defender(&board, 'D', 3);
+    put_attacker(&board, 'B', 3);
+    put_attacker(&board, 'C', 2);
+    put_attacker(&board, 'C', 4);
+    put_attacker(&board, 'D', 2);
+    put_attacker(&board, 'D', 4);
+    put_attacker(&board, 'E', 3);
+    assert(capture(&board, 'E', 3) == 2);
+    assert(is_empty(&board, 'C', 3) && is_empty(&board, 'D', 3));
+
+    /* the mover's own enclosed group stays: only the mover captures */
+    board = board_make();
+    put_attacker(&board, 'C', 3);
+    put_attacker(&board, 'D', 3);
+    put_defender(&board, 'B', 3);
+    put_defender(&board, 'E', 3);
+    put_defender(&board, 'C', 2);
+    put_defender(&board, 'D', 2);
+    put_defender(&board, 'C', 4);
+    put_defender(&board, 'D', 4);
+    put_attacker(&board, 'I', 9);
+    assert(capture(&board, 'I', 9) == 0);
+    assert(!is_empty(&board, 'C', 3) && !is_empty(&board, 'D', 3));
+
+    /* defenders can encircle an attacker group too */
+    put_defender(&board, 'D', 4);
+    assert(capture(&board, 'D', 4) == 2);
+    assert(is_empty(&board, 'C', 3) && is_empty(&board, 'D', 3));
+}
+
+/* ---------- apply_move and end of game ---------- */
+
+static void test_apply_and_outcome(void)
+{
+    Board board = board_make();
+    board_init(&board);
+    assert(is_game_over(&board) == 0);                 /* start position */
+
+    Position from = at('F', 2);
+    Position to = at('F', 3);
+    assert(check_move(&board, &from, &to, PARTY_A) == MOVE_OK);
+    apply_move(&board, &from, &to);
+    assert(is_empty(&board, 'F', 2) && !is_empty(&board, 'F', 3));
+
+    board = board_make();                              /* no king */
+    put_attacker(&board, 'E', 5);
+    assert(is_game_over(&board) == 1);
+
+    board = board_make();                              /* king on an edge */
+    put_king(&board, 'A', 6);
+    put_defender(&board, 'C', 3);
+    assert(is_game_over(&board) == 2);
+
+    board = board_make();                              /* only the king left */
+    put_king(&board, 'E', 5);
+    put_attacker(&board, 'C', 3);
+    assert(is_game_over(&board) == 3);
+
+    board = board_make();                              /* game goes on */
+    put_king(&board, 'E', 5);
+    put_defender(&board, 'C', 3);
+    put_attacker(&board, 'I', 9);
+    assert(is_game_over(&board) == 0);
+}
+
+int main(void)
+{
+    test_moves_in_all_directions();
+    test_move_errors();
+    test_castle();
+    test_sandwich();
+    test_sandwich_exceptions();
+    test_encirclement();
+    test_encirclement_exceptions();
+    test_apply_and_outcome();
+
+    printf("test_capture: OK\n");
+    return 0;
+}
+
+
+============================================================
+FILE: .\tests\test_rules.c
+============================================================
+
+
+#include <assert.h>
+#include <stdio.h>
+
+#include "rules.h"
+
+#define CELL(b, col, row) \
+    (&(b).cells[((row) - 1) * COLUMN_COUNT + ((col) - 'A')])
+
+int main(void)
+{
+    Board board = board_make();
+
+    Position from = { 2, 'B' };
+    Position to = { 5, 'B' };
+
+    // Place an attacking pawn at B2
+    CELL(board, 'B', 2)->piece = (Piece){ PARTY_A, RANK_P, 101 };
+    assert(CELL(board, 'B', 2)->piece.party != PARTY_NONE);
+
+    // Valid straight-line movement
+    assert(is_move_valid(&board, &from, &to, PARTY_A));
+
+    // Wrong player's turn
+    assert(!is_move_valid(&board, &from, &to, PARTY_D));
+
+    // Diagonal movement
+    Position diagonal = { 5, 'C' };
+    assert(!is_move_valid(&board, &from, &diagonal, PARTY_A));
+
+    // Blocked path
+    CELL(board, 'B', 4)->piece.party = PARTY_D;
+    assert(!is_move_valid(&board, &from, &to, PARTY_A));
+
+    // Clear path again
+    CELL(board, 'B', 4)->piece.party = PARTY_NONE;
+    assert(is_move_valid(&board, &from, &to, PARTY_A));
+
+    // Apply movement
+    apply_move(&board, &from, &to);
+
+    assert(CELL(board, 'B', 2)->piece.party == PARTY_NONE);
+    assert(CELL(board, 'B', 5)->piece.party != PARTY_NONE);
+    assert(CELL(board, 'B', 5)->piece.id == 101);
+
+    printf("test_rules: OK\n");
+
+    return 0;
+}
+

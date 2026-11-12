@@ -1,12 +1,6 @@
-
-#include "game.h"
+#include "board.h"
 #include <stdio.h>
 
-const char* game_title(void) { return "HNEFATAL"; }
-
-const char* game_version(void) { return "0.1.0"; }
-
-/* AI-assisted: FEN-like starting position. Digits represent consecutive empty cells. */
 static const char* START_POSITION = "3aaaaa3/5a5/11/a4d4a/a3ddd3a/aa1ddkdd1aa/a3ddd3a/a4d4a/11/5a5/3aaaaa3";
 
 Board board_make(void)
@@ -29,7 +23,9 @@ Board board_make(void)
                 board.cells[i].type = Open;
             }
 
-            board.cells[i].occupied = false;
+            board.cells[i].piece.party = PARTY_NONE;
+            board.cells[i].piece.rank = RANK_NONE;
+            board.cells[i].piece.id = 0;
             i++;
         }
     }
@@ -37,15 +33,6 @@ Board board_make(void)
     return board;
 }
 
-static Cell* board_cell(Board* board, char column, int row)
-{
-    int c = column - 'A';
-    int r = row - 1;
-
-    return &board->cells[r * COLUMN_COUNT + c];
-}
-
-/* AI-assisted: Converts a FEN-like position string into a board. */
 bool board_position_from_string(Board* board, const char* position)
 {
     if (board == NULL || position == NULL)
@@ -54,7 +41,8 @@ bool board_position_from_string(Board* board, const char* position)
     Board parsed = board_make();
     int row = 0;
     int column = 0;
-    int piece_id = 0;
+    int a_piece_id = 1;
+    int d_piece_id = 1;
     int king_count = 0;
 
     for (int i = 0; position[i] != '\0'; i++) {
@@ -94,18 +82,24 @@ bool board_position_from_string(Board* board, const char* position)
 
         switch (symbol) {
         case 'a':
-            cell->piece = (Piece){ PARTY_A, RANK_P, piece_id++ };
-            cell->occupied = true;
+            if (cell->type == Castle)
+                return false;
+
+            cell->piece = (Piece){ PARTY_A, RANK_P, 100 + a_piece_id++ };
             break;
 
         case 'd':
-            cell->piece = (Piece){ PARTY_D, RANK_P, piece_id++ };
-            cell->occupied = true;
+            if (cell->type == Castle)
+                return false;
+
+            cell->piece = (Piece){ PARTY_D, RANK_P, 200 + d_piece_id++ };
             break;
 
         case 'k':
-            cell->piece = (Piece){ PARTY_D, RANK_K, piece_id++ };
-            cell->occupied = true;
+            if (king_count >= 1)
+                return false;
+
+            cell->piece = (Piece){ PARTY_D, RANK_K, 200 };
             king_count++;
             break;
 
@@ -116,10 +110,7 @@ bool board_position_from_string(Board* board, const char* position)
         column++;
     }
 
-    if (row != ROW_COUNT - 1 ||
-        column != COLUMN_COUNT ||
-        king_count != 1 ||
-        piece_id > INIT_PIECE_COUNT)
+    if (row != ROW_COUNT - 1 || column != COLUMN_COUNT)
         return false;
 
     *board = parsed;
@@ -143,7 +134,10 @@ bool board_position_to_string(const Board* board, char position[POSITION_STRING_
                 row * COLUMN_COUNT + column
             ];
 
-            if (!cell->occupied) {
+            if (cell->piece.party == PARTY_NONE) {
+                if (cell->piece.rank != RANK_NONE)
+                    return false;
+
                 empty_count++;
                 continue;
             }
@@ -164,6 +158,13 @@ bool board_position_to_string(const Board* board, char position[POSITION_STRING_
             }
 
             Piece piece = cell->piece;
+
+            if (cell->type == Castle &&
+                !(cell->piece.party == PARTY_D && cell->piece.rank == RANK_K))
+                return false;
+
+            if (index >= POSITION_STRING_SIZE - 1)
+                return false;
 
             if (piece.party == PARTY_A && piece.rank == RANK_P) {
                 position[index++] = 'a';
@@ -194,23 +195,33 @@ bool board_position_to_string(const Board* board, char position[POSITION_STRING_
             index += written;
         }
 
-        if (row > 0)
+        if (row > 0) {
+            if (index >= POSITION_STRING_SIZE - 1)
+                return false;
+
             position[index++] = '/';
+        }
     }
 
     position[index] = '\0';
-    return king_count == 1;
+    return king_count <= 1;
 }
 
-// AI-assisted: Sets up the initial board using the position string.
-void board_setup(Board* board)
+bool board_setup(Board* board)
 {
-    board_position_from_string(board, START_POSITION);
+    if (board == NULL)
+        return false;
+
+    return board_position_from_string(board, START_POSITION);
 }
 
-void game_init(GameState* game)
+bool board_init(Board* board)
 {
-    game->board = board_make();
-    board_setup(&game->board);
+    if (board == NULL)
+        return false;
+
+    *board = board_make();
+
+    return board_setup(board);
 }
 

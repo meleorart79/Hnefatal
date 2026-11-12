@@ -1,7 +1,7 @@
 import os
 
 # Configuration
-TARGET_DIR = "./src"  
+TARGET_DIR = "."  
 OUTPUT_FILE = "project_dump.txt"
 
 def dump_directory():

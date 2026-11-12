@@ -1,15 +1,13 @@
 CC      := gcc
-CFLAGS  := -std=c11 -Wall -Wextra -g -Isrc -IC:/raylib/raylib/src
-LDFLAGS := -LC:/raylib/raylib/src
-LDLIBS  := -lraylib -lopengl32 -lgdi32 -lwinmm
+CFLAGS  := -Isrc -std=c11 -Wall -Wextra -Wpedantic
 
 SRC := $(wildcard src/*.c)
 OBJ := $(SRC:src/%.c=build/%.o)
 
-TEST_LIB := src/pieces.c src/game.c src/rules.c
+TEST_LIB := src/ui.c src/board.c src/rules.c
 
 hnefatal.exe: $(OBJ)
-	$(CC) $(OBJ) -o $@ $(LDFLAGS) $(LDLIBS)
+	$(CC) $(OBJ) -o $@
 
 build/%.o: src/%.c | build
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
@@ -20,15 +18,19 @@ build:
 run: hnefatal.exe
 	./hnefatal.exe
 
-build/test_pieces.exe: tests/test_pieces.c $(TEST_LIB) | build
+build/test_board.exe: tests/test_board.c $(TEST_LIB) | build
 	$(CC) $(CFLAGS) $^ -o $@
 
 build/test_rules.exe: tests/test_rules.c $(TEST_LIB) | build
 	$(CC) $(CFLAGS) $^ -o $@
 
-test: build/test_pieces.exe build/test_rules.exe
-	./build/test_pieces.exe
+build/test_capture.exe: tests/test_capture.c $(TEST_LIB) | build
+	$(CC) $(CFLAGS) $^ -o $@
+
+test: build/test_board.exe build/test_rules.exe build/test_capture.exe
+	./build/test_board.exe
 	./build/test_rules.exe
+	./build/test_capture.exe
 
 clean:
 	rm -rf build hnefatal.exe

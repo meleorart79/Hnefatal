@@ -1,12 +1,11 @@
-
-#ifndef GAME_H
-#define GAME_H
+#ifndef BOARD_H
+#define BOARD_H
 
 #include <stdbool.h>
-#include "pieces.h"
 
 #define BOARD_SIZE (ROW_COUNT * COLUMN_COUNT)
 #define POSITION_STRING_SIZE 132
+#define INIT_PIECE_COUNT 37
 
 typedef enum {
     COLUMN_A, COLUMN_B, COLUMN_C, COLUMN_D, COLUMN_E, COLUMN_F,
@@ -19,9 +18,25 @@ typedef enum {
 } Row;
 
 typedef struct {
-    char column;
     int row;
+    char column;
 } Position;
+
+typedef enum {
+    PARTY_D, PARTY_A,
+    PARTY_COUNT, PARTY_NONE
+} Party;
+
+typedef enum {
+    RANK_P, RANK_K,
+	RANK_COUNT, RANK_NONE
+} Rank;
+
+typedef struct {
+    Party party;
+    Rank rank;
+    int id;
+} Piece;
 
 typedef enum {
     Edge, Castle, Open
@@ -32,26 +47,18 @@ typedef struct {
     Row row;
     CType type;
     Piece piece;
-    bool occupied;
 } Cell;
 
 typedef struct {
     Cell cells[BOARD_SIZE];
 } Board;
 
-typedef struct {
-    Board board;
-} GameState;
-
-const char* game_title(void);
-const char* game_version(void);
-
 Board board_make(void);
-void board_setup(Board* board);
+bool board_setup(Board* board); 
 bool board_position_from_string(Board* board, const char* position);
 bool board_position_to_string(const Board* board, char position[POSITION_STRING_SIZE]);
 
-void game_init(GameState* game);
+bool board_init(Board* board);
 
 #endif
 
